@@ -1,3 +1,7 @@
+---
+---
+---
+
 ## ![](images/Screenshot%202025-05-31%20150130.png)Latihan MPDW
 
 x=3+2 x
