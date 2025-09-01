@@ -1,1 +1,303 @@
+---
+title: "Tugas Prak MPDW 1"
+author: "Nisrina Suci Fadila (G1401231021)"
+date: "2025-08-30"
+output: html_document
+---
+
+```{r}
+library(rio)
+data <- import("https://raw.githubusercontent.com/Nisrinafdl/mpdw/refs/heads/main/Pertemuan%201/data%20200.csv")
+data
+```
+
+```{r}
+library("forecast")
+library("graphics")
+library("TTR")
+library("TSA")
+```
+
+## Eksplorasi Data
+
+```{r}
+str(data)
+dim(data)
+```
+
+Mengubah data agar terbaca sebagai data deret waktu
+
+```{r}
+data.ts <- ts(data$Revenue)
+```
+
+```{r}
+summary(data.ts)
+```
+
+Membuat plot data deret waktu
+
+```{r}
+ts.plot(data.ts, xlab="Date", ylab="Revenue", 
+        main = "Time Series Plot")
+points(data.ts)
+```
+
+## Single Moving Average
+
+### Pembagian Data
+
+Perbandingan 80% data latih dan 20% data uji.
+
+```{r}
+training <- data[1:160,]
+testing <- data[161:200,]
+train.ts <- ts(training$Revenue)
+test.ts <- ts(testing$Revenue)
+```
+
+### Eksplorasi Data
+
+Eksplorasi data dilakukan pada keseluruhan data, data latih serta data uji menggunakan plot data deret waktu.
+
+```{r}
+#eksplorasi keseluruhan data
+plot(data.ts, col="red",main="Plot semua data")
+points(data.ts)
+
+#eksplorasi data latih
+plot(train.ts, col="blue",main="Plot data latih")
+points(train.ts)
+
+#eksplorasi data uji
+plot(test.ts, col="blue",main="Plot data uji")
+points(test.ts)
+```
+
+```{r}
+#Eksplorasi dengan GGPLOT
+library(ggplot2)
+ggplot() + 
+  geom_line(data = training, aes(x = Date, y = Revenue, col = "Data Latih")) +
+  geom_line(data = testing, aes(x = Date, y = Revenue, col = "Data Uji")) +
+  labs(x = "Date", y = "Revenue", color = "Legend") +
+  scale_colour_manual(name="Keterangan:", breaks = c("Data Latih", "Data Uji"),
+                      values = c("blue", "red")) + 
+  theme_bw() + theme(legend.position = "bottom",
+                     plot.caption = element_text(hjust=0.5, size=12))
+```
+
+### Single Moving Average (SMA)
+
+Karena pola data stasioner, maka metode pemulusan yang cocok yaitu Single Moving Avarage. Dalam hal ini akan dilakukan pemulusan dengan parameter `m=4`.
+
+```{r}
+data_sma<-SMA(train.ts, n=4)
+data_sma
+```
+
+```{r}
+data_ramal<-c(NA,data_sma)
+data_ramal #forecast 1 periode ke depan
+```
+
+Selanjutnya akan dilakukan peramalan sejumlah data uji yaitu 40 periode. Pada metode SMA, hasil peramalan 40 periode ke depan akan bernilai sama dengan hasil peramalan 1 periode kedepan. Dalam hal ini akan dilakukan pengguabungan data aktual train, data hasil pemulusan dan data hasil ramalan 24 periode kedepan.
+
+```{r}
+data_gab<-cbind(aktual=c(train.ts,rep(NA,40)),pemulusan=c(data_sma,rep(NA,40)),ramalan=c(data_ramal,rep(data_ramal[length(data_ramal)],39)))
+data_gab #forecast 24 periode ke depan
+```
+
+```{r}
+#menggunakan data keseluruhan
+ts.plot(data.ts, xlab="Date", ylab="Revenue", main= "SMA N=4 Data Revenue")
+points(data.ts) #utkdata aktual
+lines(data_gab[,2],col="green",lwd=2) #data gabungan  yg pemulusan
+lines(data_gab[,3],col="red",lwd=2) #data ramalah
+legend("topleft",c("data aktual","data pemulusan","data peramalan"), lty=8, col=c("black","green","red"), cex=0.5)
+```
+
+Selanjutnya perhitungan akurasi dilakukan dengan ukuran akurasi *Sum Squares Error* (SSE), *Mean Square Error* (MSE) dan *Mean Absolute Percentage Error* (MAPE).
+
+```{r}
+#Menghitung nilai keakuratan data latih
+error_train.sma = train.ts-data_ramal[1:length(train.ts)]
+SSE_train.sma = sum(error_train.sma[5:length(train.ts)]^2)
+MSE_train.sma = mean(error_train.sma[5:length(train.ts)]^2)
+MAPE_train.sma = mean(abs((error_train.sma[5:length(train.ts)]/train.ts[5:length(train.ts)])*100))
+
+akurasi_train.sma <- matrix(c(SSE_train.sma, MSE_train.sma, MAPE_train.sma))
+row.names(akurasi_train.sma)<- c("SSE", "MSE", "MAPE")
+colnames(akurasi_train.sma) <- c("Akurasi m = 4")
+akurasi_train.sma
+```
+
+Perhitungan akurasi pada data latih menggunakan nilai MAPE menghasilkan nilai MAPE = 0.377% \< 10% sehingga model ini dapat dikategorikan sebagai sangat baik.
+
+```{r}
+#Menghitung nilai keakuratan data uji
+error_test.sma = test.ts-data_gab[161:200,3]
+SSE_test.sma = sum(error_test.sma^2)
+MSE_test.sma = mean(error_test.sma^2)
+MAPE_test.sma = mean(abs((error_test.sma/test.ts*100)))
+
+akurasi_test.sma <- matrix(c(SSE_test.sma, MSE_test.sma, MAPE_test.sma))
+row.names(akurasi_test.sma)<- c("SSE", "MSE", "MAPE")
+colnames(akurasi_test.sma) <- c("Akurasi m = 4")
+akurasi_test.sma
+```
+
+Perhitungan akurasi pada data uji menggunakan nilai MAPE menghasilkan nilai MAPE = 0.3989% \< 10% sehingga model ini dapat dikategorikan sebagai sangat baik.
+
+## Single Exponential Smoothing
+
+Metode *Exponential Smoothing* juga cocok digunakan untuk pola data stasioner.
+
+### Pembagian Data
+
+Pembagian data latih dan data uji dilakukan dengan perbandingan 80% data latih dan 20% data uji.
+
+```{r}
+#membagi training dan testing
+training<-data[1:160,]
+testing<-data[161:200,]
+train.ts <- ts(training$Revenue)
+test.ts <- ts(testing$Revenue)
+```
+
+### Eksplorasi
+
+Membuat plot data deret waktu untuk keseluruhan data, data latih, dan data uji.
+
+```{r}
+#eksplorasi data
+plot(data.ts, col="black",main="Plot semua data")
+points(data1.ts)
+
+plot(train.ts, col="red",main="Plot data latih")
+points(train.ts)
+
+plot(test.ts, col="blue",main="Plot data uji")
+points(test.ts)
+```
+
+```{r}
+#Cara 1 (fungsi ses)
+ses1 <- ses(train.ts, h = 40, alpha = 0.2)
+plot(ses1)
+ses1
+
+ses2<- ses(train.ts, h = 40, alpha = 0.7)
+plot(ses2)
+ses2
+```
+
+```{r}
+autoplot(ses1) +
+  autolayer(fitted(ses1), series="Fitted") +
+  ylab("Revenue") + xlab("Date")
+```
+
+```{r}
+#Cara 2 (fungsi Holtwinter)
+ses_1<- HoltWinters(train.ts, gamma = FALSE, beta = FALSE, alpha = 0.2)
+plot(ses_1)
+
+#ramalan
+ramalan_1<- forecast(ses1, h=40)
+ramalan_1
+
+ses_2<- HoltWinters(train.ts, gamma = FALSE, beta = FALSE, alpha = 0.7)
+plot(ses_2)
+
+#ramalan
+ramalan_2<- forecast(ses_2, h=40)
+ramalan_2
+```
+
+```{r}
+#SES
+ses.opt <- ses(train.ts, h = 40, alpha = NULL)
+plot(ses.opt)
+ses.opt
+
+#Lamda Optimum Holt Winter
+sesopt<- HoltWinters(train.ts, gamma = FALSE, beta = FALSE,alpha = NULL)
+sesopt
+plot(sesopt)
+
+#ramalan
+ramalanopt<- forecast(sesopt, h=40)
+ramalanopt
+```
+
+#### Akurasi Data Latih
+
+```{r}
+#Keakuratan Metode
+#Pada data training
+SSE1<-ses_1$SSE
+MSE1<-ses_1$SSE/length(train.ts)
+RMSE1<-sqrt(MSE1)
+
+akurasi1 <- matrix(c(SSE1,MSE1,RMSE1))
+row.names(akurasi1)<- c("SSE", "MSE", "RMSE")
+colnames(akurasi1) <- c("Akurasi lamda=0.2")
+akurasi1
+
+SSE2<-ses_2$SSE
+MSE2<-ses_2$SSE/length(train.ts)
+RMSE2<-sqrt(MSE2)
+
+akurasi2 <- matrix(c(SSE2,MSE2,RMSE2))
+row.names(akurasi2)<- c("SSE", "MSE", "RMSE")
+colnames(akurasi2) <- c("Akurasi lamda=0.7")
+akurasi2
+
+#Cara Manual
+fitted1<-ramalan_1$fitted
+sisaan1<-ramalan_1$residuals
+head(sisaan1)
+
+resid1<-training$Revenue-ramalan_1$fitted
+head(resid1)
+```
+
+Model dengan λ = 0.2 menghasilkan SSE, MSE, RMSE yang lebih rendah dibanding λ = 0.7. Artinya, pemulusan dengan λ = 0.2 lebih cocok untuk data ini karena menghasilkan prediksi yang lebih akurat.
+
+#### Akurasi Data Uji
+
+```{r}
+selisih1<-ramalan_1$mean-testing$Revenue
+SSEtesting1<-sum(selisih1^2)
+MSEtesting1<-SSEtesting1/length(testing)
+
+selisih2<-ramalan_2$mean-testing$Revenue
+SSEtesting2<-sum(selisih2^2)
+MSEtesting2<-SSEtesting2/length(testing)
+
+selisihopt<-ramalanopt$mean-testing$Revenue
+SSEtestingopt<-sum(selisihopt^2)
+MSEtestingopt<-SSEtestingopt/length(testing)
+
+akurasitesting1 <- matrix(c(SSEtesting1,SSEtesting2,SSEtestingopt))
+row.names(akurasitesting1)<- c("SSE1", "SSE2", "SSEopt")
+akurasitesting1
+
+akurasitesting2 <- matrix(c(MSEtesting1,MSEtesting2,MSEtestingopt))
+row.names(akurasitesting2)<- c("MSE1", "MSE2", "MSEopt")
+akurasitesting2
+```
+
+Berdasarkan hasil perhitungan SSE dan MSE pada data uji, Model 2 menunjukkan performa terbaik dengan nilai error terkecil (SSE = 11.62, MSE = 5.81). Hal ini mengindikasikan bahwa Model 2 lebih mampu menangkap pola data dibandingkan Model 1 maupun Model optimal.
+
+```{r}
+accuracy(ramalanopt,testing$Revenue)
+```
+
+Perhitungan akurasi pada data uji dan latih menggunakan nilai MAPE menghasilkan nilai MAPE \< 10% sehingga model ini dapat dikategorikan sebagai sangat baik.
+
+## Kesimpulan
+
+Berdasarkan hasil perhitungan MAPE, metode SES memberikan akurasi yang sedikit lebih baik pada data latih (0.357% dibandingkan 0.3776% pada SMA). Namun, pada data uji yang menjadi acuan utama untuk menilai kemampuan model dalam meramalkan data baru, metode SMA menghasilkan MAPE yang lebih kecil (0.3989% dibandingkan 0.4018% pada SES). Dengan demikian, dapat disimpulkan bahwa metode SMA lebih baik digunakan pada kasus ini karena memberikan hasil peramalan yang lebih akurat pada data uji, meskipun perbedaannya relatif kecil.
 
