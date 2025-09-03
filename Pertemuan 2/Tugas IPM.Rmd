@@ -1,1 +1,202 @@
+---
+title: "Tugas IPM"
+author: "Nisrina Suci Fadila (G1401231021)"
+date: "2025-09-02"
+output: html_document
+---
+
+```{r}
+library("forecast")
+library("graphics")
+library("TTR")
+library("TSA")
+```
+
+```{r}
+library(rio)
+dt <- import("https://raw.githubusercontent.com/Nisrinafdl/mpdw/refs/heads/main/Pertemuan%202/data%20IPM.csv")
+dt
+```
+
+## Eksplorasi data
+```{r}
+View(dt)
+str(dt)
+dim(dt)
+```
+```{r}
+dt.ts <- ts(data1$ipm)
+```
+
+```{r}
+summary(dt.ts)
+```
+
+```{r}
+ts.plot(dt.ts, xlab="Tahun", ylab="IPM", 
+        main = "Time Series Plot")
+points(dt.ts)
+```
+
+```{r}
+library(lmtest) # Untuk Uji Durbin-Watson
+library(orcutt) # Untuk metode Cochrane-Orcutt
+library(HoRM)   # Untuk metode Hildreth-Lu
+```
+
+## Membuat Model Awal (Tersangka Utama)
+
+Kita akan membuat model regresi linear sederhana untuk memprediksi `ipm` berdasarkan `tahun`. Di tahap ini, kita berasumsi modelnya baik-baik saja.
+
+```{r}
+# Membuat model regresi OLS (Ordinary Least Squares)
+model.awal <- lm(ipm ~ tahun, data = dt)
+summary(model.awal)
+```
+**Nilai Adjusted R-squared sangat tinggi (0.986)** dan koefisien `tahun` **sangat signifikan (p-value \< 0.001)**. Jika kita berhenti di sini, kita akan menyimpulkan ini adalah model yang fantastis, tapi kita harus waspada karena kemungkinan ada autokolerasi.
+
+
+### Diagnosis Visual
+
+Kita akan plot sisaan untuk melihat apakah ada pola yang mencurigakan.
+
+```{r}
+# Ambil sisaan dari model
+sisaan.awal <- residuals(model.awal)
+
+# Plot sisaan terhadap waktu
+plot(dt$tahun, sisaan.awal, type="o", pch=20, col="red",
+     main="Plot Sisaan vs Waktu", xlab="Tahun", ylab="Sisaan")
+abline(h=0, lty=2) # Garis referensi di y=0
+```
+Karena pola membentuk naik - turun - naik lagi, maka pola tidak benar-benar acak sehingga ada indikasi kuat autokorelasi pada sisaan.
+
+### 3.2. Diagnosis Formal (Uji Durbin-Watson)
+
+-   **H0 (Hipotesis Nol)**: Tidak ada autokorelasi. Sisaan saling bebas.
+
+-   **H1 (Hipotesis Alternatif)**: Ada autokorelasi.
+
+```{r}
+dwtest(model.awal)
+```
+**Hasil Investigasi:**
+
+-   P-value yang dihasilkan **sangat kecil (0.04632)**, yaitu di bawah tingkat signifikansi 0.05.
+
+-   Kesimpulan: Kita **menolak H0**. Bukti sudah kuat. Model kita **terbukti menderita autokorelasi**.
+
+## Penanganan 
+
+### Metode 1: Cochrane-Orcutt
+
+```{r}
+model.co <- cochrane.orcutt(model.awal)
+summary(model.co)
+
+# rho paling optimum
+rho <- model.co$rho
+cat("Rho optimum:", rho)
+```
+-   Statistik **Durbin-Watson baru**. Nilainya sekarang jauh lebih dekat ke 2, dan p-value-nya (\> 0.05) menunjukkan bahwa **autokorelasi sudah berhasil diatasi**.
+
+-   Koefisien `(Intercept)` dan `tahun` yang baru. Ini adalah estimasi yang lebih valid.
+
+**Verifikasi Manual:**
+
+```{r}
+ipm_trans <- dt$ipm[-1] - dt$ipm[-10]*rho
+
+tahun_trans <- dt$tahun[-1] - dt$tahun[-10]*rho
+model.co.manual <- lm(ipm_trans~tahun_trans)
+
+b0.co.manual <- coef(model.co.manual)[1]/(1-rho)
+b1.co.manual <- coef(model.co.manual)[2]
+cat("Koefisien manual Cochrane-Orcutt:\n")
+cat("b0:", b0.co.manual, "\n")
+cat("b1:", b1.co.manual, "\n")
+```
+**Perhatikan:** Hasil koefisien manual kita sangat mirip dengan hasil dari fungsi otomatis! Ini membuktikan bahwa kita memahami mekanisme di baliknya. (Catatan: Perbedaan kecil mungkin terjadi karena fungsi otomatis melakukan beberapa iterasi).
+
+### Metode 2: Hildreth-Lu
+
+**Intuisi:** Metode ini lebih sistematis. Ia akan mencoba berbagai kemungkinan nilai ρ dan memilih satu yang menghasilkan **Sum of Squared Errors (SSE) terkecil.**
+
+```{r}
+#Penanganan Autokorelasi Hildreth lu
+# Hildreth-Lu
+hildreth_lu_func<- function(r, model){
+  x <- model_matrix(model)[,-1]
+  y <- model_response(model.frame(model))
+  n <- length(y)
+  t <- 2:n
+  y <- y[t]-r*y[t-1]
+  x <- x[t]-r*x[t-1]
+  
+  return(lm(y~x))
+}
+
+#Pencariab rho yang meminimumkan SSE
+r <- c(seq(0.1,0.9, by= 0.1))
+tab <- data.frame("rho" = r, "SSE" = sapply(r, function(i){deviance(hildreth.lu.func(i, model.awal))}))
+round(tab, 4)
+```
+Hasil di atas terlihat ρ minimum ketika 0.3. Namun, hasil tersebut masih kurang teliti sehingga akan dicari kembali ρ yang lebih optimum dengan ketelitian yang lebih. Jika sebelumnya jarak antar ρ yang dicari adalah 0.1, kali ini jarak antar ρ adalah 0.001 dan dilakukan pada selang 0.2 sampai dengan 0.5.
+
+
+```{r}
+#Rho optimal di sekitar 0.4
+rOpt <- seq(0.2,0.5, by= 0.001)
+tabOpt <- data.frame("rho" = rOpt, "SSE" = sapply(rOpt, function(i){deviance(hildreth.lu.func(i, model.awal))}))
+head(tabOpt[order(tabOpt$SSE),])
+```
+
+```{r}
+#Grafik SSE optimum
+par(mfrow = c(1,1))
+plot(tab$SSE ~ tab$rho , type = "l", xlab = "Rho", ylab = "SSE")
+abline(v = tabOpt[tabOpt$SSE==min(tabOpt$SSE),"rho"], lty = 2, col="red",lwd=2)
+text(x=0.316, y=0.2421586, labels = "rho=0.316", cex = 0.8)
+```
+
+```{r}
+model.hl <- hildreth.lu(dt$ipm, dt$tahun, rho = 0.316)
+summary(model.hl)
+```
+```{r}
+#Transformasi Balik
+cat("y = ", coef(model.hl)[1]/(1-0.316), "+", coef(model.hl)[2],"x", sep = "")
+```
+
+```{r}
+#Deteksi autokorelasi
+dwtest(model.hl)
+```
+Karena nilai p-value > 0.05, maka model sudah bagus
+
+## Evaluasi Akhir
+
+Mari kita bandingkan SSE dan Statistik Durbin-Watson dari ketiga model untuk melihat seberapa efektif penanganan kita.
+
+```{r}
+# Menghitung SSE untuk setiap model secara manual
+sse.awal <- sum(residuals(model.awal)^2)
+sse.co <- sum(residuals(model.co)^2)
+sse.hl <- sum(residuals(model.hl)^2)
+
+# Membuat tabel perbandingan
+data.frame(
+  Metode = c("Model Awal (Sakit)", "Cochrane-Orcutt (Sehat)", "Hildreth-Lu (Sehat)"),
+  SSE = c(sse.awal, sse.co, sse.hl),
+  DW_Statistic = c(dwtest(model.awal)$statistic, model.co$DW[3], dwtest(model.hl)$statistic)
+)
+
+```
+**Kesimpulan Investigasi:**
+
+-   Baik metode Cochrane-Orcutt maupun Hildreth-Lu berhasil menurunkan SSE model, artinya model yang baru lebih akurat.
+
+-   Keduanya juga berhasil menghilangkan autokorelasi, yang ditunjukkan oleh statistik D-W yang mendekati 2 yaitu C-O: 1.6067 dan Hl 1.6064.
+
+-   Model akhir yang seharusnya kita gunakan adalah salah satu dari model yang telah ditangani, karena estimasi koefisien dan uji signifikansinya sekarang jauh lebih dapat dipercaya.
 
