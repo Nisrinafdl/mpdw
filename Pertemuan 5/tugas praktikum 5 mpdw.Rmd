@@ -1,0 +1,226 @@
+---
+title: "Tugas Praktikum 5 MPDW"
+author: "Nisrina Suci Fadila (G1401231021)"
+date: "2025-10-01"
+output: html_document
+---
+
+```{r}
+library(ggplot2)
+library(tsibble)
+library(tseries)
+library(MASS)
+```
+
+```{r}
+library(rio)
+dt <- import("https://raw.githubusercontent.com/Nisrinafdl/mpdw/refs/heads/main/Pertemuan%201/data%20200.csv")
+dt
+```
+
+```{r}
+dt.ts <- ts(dt$Revenue)
+```
+
+### Plot *Time Series*
+```{r}
+dt.ts |> as_tsibble() |> 
+  ggplot(aes(x = index, y = value)) +
+  geom_line() + theme_bw() +
+  xlab("Date") + ylab("Revenue")
+mean(dt.ts)
+```
+Berdasarkan plot time series tersebut, data stasioner pada rataan dan ragam 
+
+```{r}
+lattice::densityplot(as.vector(dt.ts))
+```
+Plot deret waktu di atas menunjukkan bahwa data stasioner dalam rataan, ditandai dengan data yang menyebar di sekitar nilai tengahnya (107.488) dan stasioner dalam ragam, ditandai dengan data berfluktuasi pada rentang yang relatif sama sepanjang waktu.
+
+### Plot ACF
+```{r}
+acf(dt.ts)
+```
+Berdasarkan plot ACF, terlihat bahwa plot ACF pada data tersebut cenderung *cut off* 
+
+### Uji ADF
+
+```{r}
+tseries::adf.test(dt.ts)
+```
+
+$H_0$ : Data tidak stasioner dalam rataan
+$H_1$ : Data stasioner dalam rataan
+
+Berdasarkan uji ADF tersebut, didapat *p-value* sebesar 0.01 yang lebih kecil dari taraf nyata 5% sehingga tolak $H_0$ dan menandakan bahwa data stasioner dalam rataan. Hal ini sesuai dengan hasil eksplorasi menggunakan plot time series dan plot ACF.
+
+### Plot Box-Cox
+```{r}
+index <- seq(1:200)
+
+# Box-Cox
+bc <- boxcox(
+  dt.ts ~ index,
+  lambda = seq(-25, 35, by = 0.01)
+)
+
+# Nilai lambda optimum
+lambda <- bc$x[which.max(bc$y)]
+lambda
+
+# Selang kepercayaan 95% untuk lambda
+ci_lambda <- bc$x[bc$y > max(bc$y) - 0.5 * qchisq(0.95, 1)]
+
+# Batas bawah dan batas atas
+ci_lower <- min(ci_lambda)
+ci_upper <- max(ci_lambda)
+
+c(Batas_Bawah = ci_lower, Batas_Atas = ci_upper)
+```
+Gambar di atas menunjukkan nilai λ optimum (rounded value) sebesar **3,97** dan selang kepercayaan 95% nilai memiliki batas bawah **-21.94** dan batas atas **30.44**. Selang tersebut memuat nilai satu sehingga dapat dikatakan bahwa data **stasioner dalam ragam**.
+
+
+### Partisi Data Deret Waktu
+```{r}
+library(ggplot2)
+library(tsibble)
+
+plot_dt <- dt.ts |> 
+  as_tsibble() |> 
+  ggplot(aes(x = index, y = value)) +
+  geom_line() +
+  theme_bw() +
+  xlab("Date") + 
+  ylab("Revenue") +
+  
+  # Tambahkan garis batas
+  geom_vline(xintercept = 78, linetype = "dashed", color = "red") +
+  geom_vline(xintercept = 171, linetype = "dashed", color = "blue") +
+  ggtitle("Partisi Deret Waktu:")
+
+plot_dt
+```
+
+### Partisi Data
+
+#### Bagian 1 (1 - 78)
+```{r}
+dt1 <- dt.ts[1:78] |> ts()
+mean(dt1)
+var(dt1)
+```
+
+#### Plot Time Series
+
+```{r}
+dt1 |> as_tsibble() |> 
+  ggplot(aes(x = index, y = value)) +
+  geom_line() + theme_bw() +
+  xlab("Date") + ylab("Revenue")
+```
+
+Plot deret waktu di atas menunjukkan bahwa data stasioner dalam rataan, ditandai dengan data yang menyebar di sekitar nilai tengahnya (107.543) dan stasioner dalam ragam, ditandai dengan lebar pita yang cenderung sama.
+
+#### Plot ACF
+
+```{r}
+acf(dt1)
+```
+
+Berdasarkan plot ACF, terlihat bahwa plot ACF pada data tersebut cenderung *cut off*
+
+#### Uji ADF
+```{r}
+tseries::adf.test(dt1)
+```
+
+$H_0$ : Data tidak stasioner dalam rataan
+$H_1$ : Data stasioner dalam rataan
+
+Berdasarkan uji ADF tersebut, didapat *p-value* sebesar 0.047 yang lebih kecil dari taraf nyata 5% sehingga tolak $H_0$ dan menandakan bahwa data stasioner dalam rataan. Hal ini sesuai dengan hasil eksplorasi menggunakan plot time series dan plot ACF.
+
+#### Plot Boxcox
+```{r}
+index <- seq(1, 78)
+
+# Box-Cox
+bc <- boxcox(
+  dt1 ~ index,
+  lambda = seq(-30, 70, by = 0.01)
+)
+
+# Nilai lambda optimum (dibulatkan)
+lambda <- bc$x[which.max(bc$y)]
+lambda
+
+# Selang kepercayaan 95% untuk lambda
+ci_lambda <- bc$x[bc$y > max(bc$y) - 0.5 * qchisq(0.95, 1)]
+
+# Batas bawah dan batas atas
+ci_lower <- min(ci_lambda)
+ci_upper <- max(ci_lambda)
+
+c(Batas_Bawah = ci_lower, Batas_Atas = ci_upper)
+```
+
+Gambar di atas menunjukkan nilai *rounded value* ($\lambda$) optimum sebesar **19.77** dan pada selang kepercayaan 95% nilai memiliki batas bawah **-24.89** dan batas atas **66.48**. Selang tersebut memuat nilai satu sehingga dapat dikatakan bahwa data bangkitan stasioner dalam ragam.
+
+### Bagian 2 : observasi (1 - 171)
+
+```{r}
+dt2 <- stas[1:171] |> ts()
+mean(dt2)
+var(dt2)
+```
+
+#### Plot Time Series
+
+```{r}
+dt2 |> as_tsibble() |> 
+  ggplot(aes(x = index, y = value)) +
+  geom_line() + theme_bw() +
+  xlab("Obs") + ylab("Nilai")
+```
+Plot deret waktu di atas menunjukkan bahwa data stasioner dalam rataan, ditandai dengan data yang menyebar di sekitar nilai tengahnya (18.02) dan stasioner dalam ragam, ditandai dengan data berfluktuasi pada rentang
+yang relatif sama sepanjang waktu.
+
+#### Plot ACF
+
+```{r}
+acf(dt2)
+```
+Berdasarkan plot ACF, terlihat bahwa plot ACF pada data tersebut *tails off*
+
+#### Uji ADF
+```{r}
+adf.test(dt2)
+```
+$H_0$ : Data tidak stasioner dalam rataan
+$H_1$ : Data stasioner dalam rataan
+
+Berdasarkan uji ADF tersebut, didapat *p-value* sebesar 0.01 yang lebih kecil dari taraf nyata 5% sehingga tolak $H_0$ dan menandakan bahwa **data stasioner dalam rataan**. Hal ini sesuai dengan hasil eksplorasi menggunakan plot time series dan plot ACF.
+
+#### Plot Boxcox
+```{r}
+index <- seq(1, 171)
+
+# Box-Cox
+bc <- boxcox(
+  dt2 ~ index,
+  lambda = seq(-1, 6, by = 0.01)
+)
+
+# Nilai lambda optimum
+lambda <- bc$x[which.max(bc$y)]
+lambda
+
+# Selang kepercayaan 95% untuk lambda
+ci_lambda <- bc$x[bc$y > max(bc$y) - 0.5 * qchisq(0.95, 1)]
+
+# Batas bawah dan batas atas
+ci_lower <- min(ci_lambda)
+ci_upper <- max(ci_lambda)
+
+c(Batas_Bawah = ci_lower, Batas_Atas = ci_upper)
+```
+Gambar di atas menunjukkan nilai *rounded value* ($\lambda$) optimum sebesar **1.66** dan pada selang kepercayaan 95% nilai memiliki batas bawah **-0.23** dan batas atas **3.55**. Selang tersebut memuat nilai satu sehingga dapat dikatakan bahwa data bangkitan **stasioner dalam ragam**.
